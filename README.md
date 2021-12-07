@@ -1,2 +1,1 @@
-# Bot-Snipping-Dapp
-snipping bot on pancake swap 
+# Snipping-Bot-BSC
