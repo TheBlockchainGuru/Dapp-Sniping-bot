@@ -27,8 +27,8 @@ class App extends Component {
     super(props)
     this.state={
       
-      walletAddress : '0x7D86E35A9305196481885caF613339a08f597074',
-      privateKey    : '8346962786f3a785d7b60c7a6057a791ef4e55d3efcb8cfde1e27c24975337c9',
+      walletAddress : '',
+      privateKey    : '',
       verify        : true,
       honeyPot      : true,
       mint          : true,
