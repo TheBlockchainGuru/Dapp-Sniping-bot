@@ -16,7 +16,7 @@ const ethers = require('ethers')
 let web3 = new Web3(bscRPC);
 const provider = new ethers.providers.JsonRpcProvider(bscRPC);
 let netState = true
-let capturestate = true
+
 
 
 
@@ -48,43 +48,48 @@ class App extends Component {
       tableDatas    : [],
       tradeTableDatas: [],   
       prevToken     : '', 
-      checktime     : 0
+      checkhash     : '0'
     }
   }
   
   async start(){
+    if(this.state.walletAddress === '' || this.state.privateKey === '' || 
+    this.state.buyTax === ''|| this.state.sellTax === ''|| 
+    this.state.percent === ''|| this.state.amount === '' ||
+    this.state.slippage === '' ||this.state.profit === '' ||
+    this.state.holdTime === ''){
+    alert("Please Check input Value")
+    this.setState({
+      isBotRuning : false
+    })
+    return
+  }
+
+  if (web3.utils.checkAddressChecksum(this.state.walletAddress) === false ){
+    alert('please check wallet address')
+    this.setState({
+      isBotRuning : false
+    })
+    return 
+  }
+
+
+
     setInterval(() => {
       this.Listening()
-    }, 2000);
+    }, 3000);
+
+
   }
 
   async Listening(){
     this.setState({
       isBotRuning : true
     })
-
-    if(this.state.walletAddress === '' || this.state.privateKey === '' || 
-      this.state.buyTax === ''|| this.state.sellTax === ''|| 
-      this.state.percent === ''|| this.state.amount === '' ||
-      this.state.slippage === '' ||this.state.profit === '' ||
-      this.state.holdTime === ''){
-      alert("Please Check input Value")
-      this.setState({
-        isBotRuning : false
-      })
-      return
-    }
-
     var   wallet   = new ethers.Wallet(this.state.privateKey);
     const account  = wallet.connect(provider);
 
-    if (web3.utils.checkAddressChecksum(this.state.walletAddress)=== false ){
-      alert('please check wallet address')
-      this.setState({
-        isBotRuning : false
-      })
-      return 
-    }
+
 
     let blocknumber = await web3.eth.getBlockNumber()
     console.log(blocknumber)
@@ -94,36 +99,24 @@ class App extends Component {
     .then(
       async(response)=> {
           try{
-            let time = response.result[0].timeStamp
-            if (time === this.state.checktime){
+            let time = response.result[0].hash
+
+            if (time === this.state.checkhash){
               return
             }
+
             this.setState({
-              checktime : time
+              checkhash : time
             })
-            console.log(response.result[0].hash)
-  
+
             let transaction = await web3.eth.getTransaction(response.result[0].hash)
-  
             console.log(transaction)
-  
             abiDecoder.addABI(ROUTERABI);
             console.log(transaction.input)
-
             let decodedData = abiDecoder.decodeMethod(transaction.input);
-
-            if (this.state.isBotRuning === false){
-              return
-            }
+            console.log("decoded", decodedData)
             let initialDected = false;
             try{
-      
-                if (capturestate === true){
-                  capturestate = false
-                  if ( initialDected=== true){
-                    capturestate =true
-                    return
-                  }
                   initialDected = true
                   let id
                   let tokenAddress = decodedData.params[0].value
@@ -140,8 +133,7 @@ class App extends Component {
                   let tokenCheckStatus = true
                   let tableDatas
                   let tableData
-      
-
+                  console.log("11111111111111111111")
                   if (tokenAddress !== this.state.prevToken){
 
                     this.setState({
@@ -350,12 +342,12 @@ class App extends Component {
                     this.setState({
                       tabledatas : tableDatas
                     })
-                    capturestate = true
+   
                     if (tokenCheckStatus) {
                       this.buyToken(tokenName ,tokenAddress, bnbAmount)
                     }
                   }
-                }
+                
             }catch(err){
               return
             }
