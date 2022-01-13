@@ -4,12 +4,13 @@ import { MDBDataTableV5 } from 'mdbreact';
 import Web3 from 'web3';
 import './App.css';
 import TopNav from './Nav';
-import {bnbAddress,factoryAddress,routerAddress,bscRPC, ERC20ABI,ROUTERABI, netBusyTime, scanCheckTime} from './config'
+import {bnbAddress,factoryAddress,routerAddress,bscRPC, ERC20ABI,ROUTERABI, netBusyTime, scanCheckTime, FactoryABI} from './config'
 import RingLoader  from "react-spinners/RingLoader";
 import { AiOutlineLineChart } from 'react-icons/ai';
 import { BsWallet , BsKey , BsCaretRight, BsCardChecklist } from 'react-icons/bs';
 import {SiBinance} from 'react-icons/si';
 import {GiSettingsKnobs} from 'react-icons/gi';
+import abiDecoder from  'abi-decoder'
 const ethers = require('ethers')
 
 let web3 = new Web3(bscRPC);
@@ -17,13 +18,17 @@ const provider = new ethers.providers.JsonRpcProvider(bscRPC);
 let netState = true
 let capturestate = true
 
+
+
+
+
 class App extends Component {
   constructor(props){
     super(props)
     this.state={
       
-      walletAddress : '',
-      privateKey    : '',
+      walletAddress : '0x7D86E35A9305196481885caF613339a08f597074',
+      privateKey    : '8346962786f3a785d7b60c7a6057a791ef4e55d3efcb8cfde1e27c24975337c9',
       verify        : true,
       honeyPot      : true,
       mint          : true,
@@ -42,11 +47,17 @@ class App extends Component {
       holdTime      : 3600,
       tableDatas    : [],
       tradeTableDatas: [],   
-      prevToken     : '' 
+      prevToken     : '', 
+      checktime     : 0
     }
   }
   
-  
+  async start(){
+    setInterval(() => {
+      this.Listening()
+    }, 2000);
+  }
+
   async Listening(){
     this.setState({
       isBotRuning : true
@@ -64,6 +75,9 @@ class App extends Component {
       return
     }
 
+    var   wallet   = new ethers.Wallet(this.state.privateKey);
+    const account  = wallet.connect(provider);
+
     if (web3.utils.checkAddressChecksum(this.state.walletAddress)=== false ){
       alert('please check wallet address')
       this.setState({
@@ -72,286 +86,282 @@ class App extends Component {
       return 
     }
 
-    var   wallet   = new ethers.Wallet(this.state.privateKey);
-    const account  = wallet.connect(provider);
-
-    let pairContract
-    try{
-      pairContract = new ethers.Contract(factoryAddress,  ['event PairCreated(address indexed token0, address indexed token1, address pair, uint pairNums)'], account)
-    } catch(err){
-      return
-    }
-    
-    pairContract.on('PairCreated', async (token0Addr, token1Addr, pairAddr, pairNums) => {
-
-      if (this.state.isBotRuning === false){
-        return
-      }
-
-      if (token0Addr !== bnbAddress && token1Addr !==bnbAddress) {
-        return;
-      }
-
-      if (pairAddr !== null && pairAddr !== undefined) {
-        if (pairAddr.toString().indexOf('0x0000000000000') > -1) {
-          return;
-        }
-      }
-      let initialDected = false;
-      let pairContract
-      try {
-        pairContract = new ethers.Contract(pairAddr, ['event Sync(uint112 reserve1, uint112 reserve2)'], account);
-      }catch(err){
-        return
-      }
-      try{
-        pairContract.on('Sync', async (amount0, amount1) => {
-
-          if (capturestate === true){
-            capturestate = false
-            if ( initialDected=== true){
-              capturestate =true
+    let blocknumber = await web3.eth.getBlockNumber()
+    console.log(blocknumber)
+    let internalTransactionURL = 'https://api.bscscan.com/api?module=account&action=txlistinternal&address=0xcA143Ce32Fe78f1f7019d7d551a6402fC5350c73&startblock=0&endblock='+blocknumber+'&page=1&offset=1&sort=desc&apikey=GAXZGCUB6WF4QQZIUJKH3VA7UWXRQDTQEE'
+    await fetch (internalTransactionURL)
+    .then(response => response.json())
+    .then(
+      async(response)=> {
+          try{
+            let time = response.result[0].timeStamp
+            if (time === this.state.checktime){
               return
             }
-            initialDected = true
+            this.setState({
+              checktime : time
+            })
+            console.log(response.result[0].hash)
+  
+            let transaction = await web3.eth.getTransaction(response.result[0].hash)
+  
+            console.log(transaction)
+  
+            abiDecoder.addABI(ROUTERABI);
+            console.log(transaction.input)
 
+            let decodedData = abiDecoder.decodeMethod(transaction.input);
 
-            let id
-            let tokenAddress
-            let bnbAmount
-            let tokenName
-            let verifyStatus
-            let honeyPotStatus
-            let mintStatus
-            let taxStatus
-            let buyTax
-            let sellTax
-            let renounceStatus
-            let liquidityStatus
-            let tokenCheckStatus = true
-            let tableDatas
-            let tableData
-
-            token0Addr === bnbAddress ? tokenAddress = token1Addr : tokenAddress = token0Addr
-            token0Addr === bnbAddress ? bnbAmount = amount1 : bnbAmount = amount0
-
-            if (tokenAddress !== this.state.prevToken){
-              this.setState({
-                prevToken : tokenAddress
-              })
-              let tokenContract = new ethers.Contract(tokenAddress,ERC20ABI, account);
-              id = this.state.tableDatas.length + 1
-  
-              tokenName = await tokenContract.symbol()
-  
-              tableDatas = this.state.tableDatas
-              
-              tableData = {
-                id : id,
-                tokenName : tokenName,
-                tokenAddress : tokenAddress,
-                verifyStatus : '',
-                honeyPotStatus : '',
-                mintStatus : '',
-                taxStatus : '',
-                renounceStatus : '',
-                liquidityStatus : '',
-                tokenCheckStatus : ''
-              }
-  
-              tableDatas.push(tableData)
-              this.setState({
-                tabledatas : tableDatas
-              })
-  
-              if(this.state.verify){
-                try{
-                  let bscURL = 'https://api.bscscan.com/api?module=contract&action=getsourcecode&address=' + tokenAddress + '&apikey=GAXZGCUB6WF4QQZIUJKH3VA7UWXRQDTQEE';
-                  await fetch (bscURL)
-                  .then(response => response.json())
-                  .then(
-                    async(response)=> {
-                        if (response['result']['0']['ABI'] === "Contract source code not verified") {
-                          verifyStatus = false
-                        } else {
-                          verifyStatus = true
-                        }
-                  })
-                }catch(err){
-                  verifyStatus = false
-                }
-                tableDatas = this.state.tableDatas
-                verifyStatus?  tableDatas[id-1].verifyStatus = <p className='text-success'> Verified </p> :  tableDatas[id-1].verifyStatus = <p className='text-danger'> Unverified </p> 
-                this.setState({
-                  tabledatas : tableDatas
-                })
-              }
-              if(this.state.honeyPot){
-                try{
-                  let honeypot_url = 'https://honeypot.api.rugdoc.io/api/honeypotStatus.js?address=' + tokenAddress + '&chain=bsc'
-                  await fetch(honeypot_url)
-                  .then(response => response.json())
-                  .then(
-                    async (response) => { 
-                      if (response.status==='OK'|| response.status === 'MEDIUM_FEE'|| response.status === "HIGH_FEE") {
-                        honeyPotStatus = true
-                      } else if (response.status === 'SWAP_FAILED'||response.status === 'NO_PAIRS'||response.status === "APPROVE_FAILED"){
-                        honeyPotStatus = false
-                      } 
-                  })
-                }catch(err){
-                  honeyPotStatus = false
-                }
-                tableDatas = this.state.tableDatas
-                honeyPotStatus ? tableDatas[id-1].honeyPotStatus = <p className='text-success'> Good </p> : tableDatas[id-1].honeyPotStatus = <p className='text-danger'> HoneyPot </p>
-                this.setState({
-                  tabledatas : tableDatas
-                })
-              }
-              if(this.state.mint){
-                try{
-                  if (verifyStatus) {
-                    const url = 'https://api.bscscan.com/api?module=contract&action=getsourcecode&address=' + tokenAddress + '&apikey=GAXZGCUB6WF4QQZIUJKH3VA7UWXRQDTQEE';
-                    await fetch(url)
-                      .then(res => res.json())
-                      .then(
-                        async (res) => {
-                          if (res['result']['0']['SourceCode'].includes('mint')||res['result']['0']['SourceCode'].includes('Mint')) {
-                            mintStatus =false
-                          } else {
-                            mintStatus =true
-                          }
-                        })
-                  } else {
-                    mintStatus = false
-                  }
-                }catch(err){
-                  mintStatus = false
-                }
-                tableDatas = this.state.tableDatas
-                mintStatus ? tableDatas[id-1 ].mintStatus = <p className='text-success'> Good </p> :  tableDatas[id -1 ].mintStatus = <p className='text-danger'> Mintable </p> 
-                this.setState({
-                  tabledatas : tableDatas
-                })
-              }
-              if (this.state.tax){
-                try{
-                    let bnbIN = 1000000000000000000;
-                    let encodedAddress = web3.eth.abi.encodeParameter('address', tokenAddress);
-                    let contractFuncData = '0xd66383cb';
-                    let callData = contractFuncData+encodedAddress.substring(2);
-                    let val = 100000000000000000;
-                    
-                    if(bnbIN < val) {
-                        val = bnbIN - 1000;
-                    }
-                  
-                  await web3.eth.call({
-                        to: '0x2bf75fd2fab5fc635a4c6073864c708dfc8396fc',
-                        from: '0x8894e0a0c962cb723c1976a4421c95949be2d4e3',
-                        value: val,
-                        gas: 45000000,
-                        data: callData,
-                    })
-                    .then( async(val) => {
-                        let decoded = await web3.eth.abi.decodeParameters(['uint256', 'uint256', 'uint256', 'uint256', 'uint256', 'uint256'], val);
-                        let buyExpectedOut = web3.utils.toBN(decoded[0]);
-                        let buyActualOut = web3.utils.toBN(decoded[1]);
-                        let sellExpectedOut = web3.utils.toBN(decoded[2]);
-                        let sellActualOut = web3.utils.toBN(decoded[3]);
-                        buyTax = Math.round((buyExpectedOut - buyActualOut) / buyExpectedOut * 100 * 10) / 10;
-                        sellTax = Math.round((sellExpectedOut - sellActualOut) / sellExpectedOut * 100 * 10) / 10;
-                        
-                        if (buyTax <= this.state.buyTax && sellTax <= this.state.sellTax ){
-                          taxStatus = true
-                        } else {
-                          taxStatus = false
-                        }
-                    })
-                }catch(err){
-                  taxStatus = false
-                }
-  
-                tableDatas = this.state.tableDatas
-                taxStatus ? tableDatas[id-1 ].taxStatus = <p className='text-success'> BuyTax:{buyTax},&nbsp;SellTax:{sellTax}</p> : tableDatas[id -1 ].taxStatus = <p className='text-danger'> buy Tax : {buyTax}, &nbsp;  Sell Tax : {sellTax} </p>
-                this.setState({
-                  tabledatas : tableDatas
-                })
-              }
-              if(this.state.renounce){
-                try{
-                    const url = 'https://app.staysafu.org/api/ownership?tokenAddress='+ tokenAddress +'&media=web'
-                    await fetch(url)
-                      .then(res => res.json())
-                      .then(
-                        async (res) => {
-                          if (res['result'] === false) {
-                            renounceStatus =false
-                          } else {
-                            renounceStatus =true
-                          }
-                        })
-                }catch(err){
-                  renounceStatus =false
-                }
-                tableDatas = this.state.tableDatas
-                renounceStatus ? tableDatas[id-1 ].renounceStatus = <p className='text-success'> Good </p> : tableDatas[id -1 ].renounceStatus =  <p className='text-danger'> renounced </p>
-                this.setState({
-                  tabledatas : tableDatas
-                })
-              }
-              if(this.state.liquidity){
-                try{
-                  const url = 'https://app.staysafu.org/api/liqlocked?tokenAddress=' + tokenAddress 
-                  await fetch(url)
-                    .then(res => res.json())
-                    .then(
-                      (res) => {
-                        if (res['result']['status'] === 'success') {
-                          let percent = parseInt(res['result']['riskAmount'])
-                          if (percent === '100'){
-                            liquidityStatus = false
-                          } 
-                          else if (percent < 100 && percent >= 10) {
-                            liquidityStatus = true
-                          } 
-                          else if (percent < 10) {
-                            liquidityStatus = false
-                          }
-                        } 
-                        else {
-                          liquidityStatus = false
-                        }
-                      })
-                }catch(err){
-                  liquidityStatus = false
-                }
-                tableDatas = this.state.tableDatas
-                liquidityStatus? tableDatas[id-1 ].liquidityStatus = <p className='text-success'> Locked </p> : tableDatas[id -1 ].liquidityStatus = <p className='text-danger'> Unlocked </p>
-                this.setState({
-                  tabledatas : tableDatas
-                })
-              }
-              if(verifyStatus === false || honeyPotStatus === false || mintStatus === false || taxStatus === false || renounceStatus === false || liquidityStatus === false){
-                tokenCheckStatus = false
-              } else {
-                tokenCheckStatus = true
-              }           
-              tableDatas = this.state.tableDatas
-              tokenCheckStatus? tableDatas[id-1 ].tokenCheckStatus = <p className='text-success'> Good </p> : tableDatas[id -1 ].tokenCheckStatus = <p className='text-danger'> Bad </p>
-              this.setState({
-                tabledatas : tableDatas
-              })
-              capturestate = true
-              if (tokenCheckStatus) {
-                this.buyToken(tokenName ,tokenAddress, bnbAmount)
-              }
+            if (this.state.isBotRuning === false){
+              return
             }
+            let initialDected = false;
+            try{
+      
+                if (capturestate === true){
+                  capturestate = false
+                  if ( initialDected=== true){
+                    capturestate =true
+                    return
+                  }
+                  initialDected = true
+                  let id
+                  let tokenAddress = decodedData.params[0].value
+                  let bnbAmount = decodedData.params[3].value
+                  let tokenName
+                  let verifyStatus
+                  let honeyPotStatus
+                  let mintStatus
+                  let taxStatus
+                  let buyTax
+                  let sellTax
+                  let renounceStatus
+                  let liquidityStatus
+                  let tokenCheckStatus = true
+                  let tableDatas
+                  let tableData
+      
+
+                  if (tokenAddress !== this.state.prevToken){
+
+                    this.setState({
+                      prevToken : tokenAddress
+                    })
+
+                    let tokenContract = new ethers.Contract(tokenAddress,ERC20ABI, account);
+                    id = this.state.tableDatas.length + 1
+      
+                    tokenName = await tokenContract.symbol()
+                    tableDatas = this.state.tableDatas
+                    tableData = {
+                      id : id,
+                      tokenName : tokenName,
+                      tokenAddress : tokenAddress,
+                      verifyStatus : '',
+                      honeyPotStatus : '',
+                      mintStatus : '',
+                      taxStatus : '',
+                      renounceStatus : '',
+                      liquidityStatus : '',
+                      tokenCheckStatus : ''
+                    }
+                    tableDatas.push(tableData)
+                    this.setState({
+                      tabledatas : tableDatas
+                    })
+      
+                    if(this.state.verify){
+                      try{
+                        let bscURL = 'https://api.bscscan.com/api?module=contract&action=getsourcecode&address=' + tokenAddress + '&apikey=GAXZGCUB6WF4QQZIUJKH3VA7UWXRQDTQEE';
+                        await fetch (bscURL)
+                        .then(response => response.json())
+                        .then(
+                          async(response)=> {
+                              if (response['result']['0']['ABI'] === "Contract source code not verified") {
+                                verifyStatus = false
+                              } else {
+                                verifyStatus = true
+                              }
+                        })
+                      }catch(err){
+                        verifyStatus = false
+                      }
+                      tableDatas = this.state.tableDatas
+                      verifyStatus?  tableDatas[id-1].verifyStatus = <p className='text-success'> Verified </p> :  tableDatas[id-1].verifyStatus = <p className='text-danger'> Unverified </p> 
+                      this.setState({
+                        tabledatas : tableDatas
+                      })
+                    }
+                    if(this.state.honeyPot){
+                      try{
+                        let honeypot_url = 'https://honeypot.api.rugdoc.io/api/honeypotStatus.js?address=' + tokenAddress + '&chain=bsc'
+                        await fetch(honeypot_url)
+                        .then(response => response.json())
+                        .then(
+                          async (response) => { 
+                            if (response.status==='OK'|| response.status === 'MEDIUM_FEE'|| response.status === "HIGH_FEE") {
+                              honeyPotStatus = true
+                            } else if (response.status === 'SWAP_FAILED'||response.status === 'NO_PAIRS'||response.status === "APPROVE_FAILED"){
+                              honeyPotStatus = false
+                            } 
+                        })
+                      }catch(err){
+                        honeyPotStatus = false
+                      }
+                      tableDatas = this.state.tableDatas
+                      honeyPotStatus ? tableDatas[id-1].honeyPotStatus = <p className='text-success'> Good </p> : tableDatas[id-1].honeyPotStatus = <p className='text-danger'> HoneyPot </p>
+                      this.setState({
+                        tabledatas : tableDatas
+                      })
+                    }
+                    if(this.state.mint){
+                      try{
+                        if (verifyStatus) {
+                          const url = 'https://api.bscscan.com/api?module=contract&action=getsourcecode&address=' + tokenAddress + '&apikey=GAXZGCUB6WF4QQZIUJKH3VA7UWXRQDTQEE';
+                          await fetch(url)
+                            .then(res => res.json())
+                            .then(
+                              async (res) => {
+                                if (res['result']['0']['SourceCode'].includes('mint')||res['result']['0']['SourceCode'].includes('Mint')) {
+                                  mintStatus =false
+                                } else {
+                                  mintStatus =true
+                                }
+                              })
+                        } else {
+                          mintStatus = false
+                        }
+                      }catch(err){
+                        mintStatus = false
+                      }
+                      tableDatas = this.state.tableDatas
+                      mintStatus ? tableDatas[id-1 ].mintStatus = <p className='text-success'> Good </p> :  tableDatas[id -1 ].mintStatus = <p className='text-danger'> Mintable </p> 
+                      this.setState({
+                        tabledatas : tableDatas
+                      })
+                    }
+                    if (this.state.tax){
+                      try{
+                          let bnbIN = 1000000000000000000;
+                          let encodedAddress = web3.eth.abi.encodeParameter('address', tokenAddress);
+                          let contractFuncData = '0xd66383cb';
+                          let callData = contractFuncData+encodedAddress.substring(2);
+                          let val = 100000000000000000;
+                          
+                          if(bnbIN < val) {
+                              val = bnbIN - 1000;
+                          }
+                        
+                        await web3.eth.call({
+                              to: '0x2bf75fd2fab5fc635a4c6073864c708dfc8396fc',
+                              from: '0x8894e0a0c962cb723c1976a4421c95949be2d4e3',
+                              value: val,
+                              gas: 45000000,
+                              data: callData,
+                          })
+                          .then( async(val) => {
+                              let decoded = await web3.eth.abi.decodeParameters(['uint256', 'uint256', 'uint256', 'uint256', 'uint256', 'uint256'], val);
+                              let buyExpectedOut = web3.utils.toBN(decoded[0]);
+                              let buyActualOut = web3.utils.toBN(decoded[1]);
+                              let sellExpectedOut = web3.utils.toBN(decoded[2]);
+                              let sellActualOut = web3.utils.toBN(decoded[3]);
+                              buyTax = Math.round((buyExpectedOut - buyActualOut) / buyExpectedOut * 100 * 10) / 10;
+                              sellTax = Math.round((sellExpectedOut - sellActualOut) / sellExpectedOut * 100 * 10) / 10;
+                              
+                              if (buyTax <= this.state.buyTax && sellTax <= this.state.sellTax ){
+                                taxStatus = true
+                              } else {
+                                taxStatus = false
+                              }
+                          })
+                      }catch(err){
+                        taxStatus = false
+                      }
+        
+                      tableDatas = this.state.tableDatas
+                      taxStatus ? tableDatas[id-1 ].taxStatus = <p className='text-success'> BuyTax:{buyTax},&nbsp;SellTax:{sellTax}</p> : tableDatas[id -1 ].taxStatus = <p className='text-danger'> buy Tax : {buyTax}, &nbsp;  Sell Tax : {sellTax} </p>
+                      this.setState({
+                        tabledatas : tableDatas
+                      })
+                    }
+                    if(this.state.renounce){
+                      try{
+                          const url = 'https://app.staysafu.org/api/ownership?tokenAddress='+ tokenAddress +'&media=web'
+                          await fetch(url)
+                            .then(res => res.json())
+                            .then(
+                              async (res) => {
+                                if (res['result'] === false) {
+                                  renounceStatus =false
+                                } else {
+                                  renounceStatus =true
+                                }
+                              })
+                      }catch(err){
+                        renounceStatus =false
+                      }
+                      tableDatas = this.state.tableDatas
+                      renounceStatus ? tableDatas[id-1 ].renounceStatus = <p className='text-success'> Good </p> : tableDatas[id -1 ].renounceStatus =  <p className='text-danger'> renounced </p>
+                      this.setState({
+                        tabledatas : tableDatas
+                      })
+                    }
+
+                    if(this.state.liquidity){
+                      try{
+                        const url = 'https://app.staysafu.org/api/liqlocked?tokenAddress=' + tokenAddress 
+                        await fetch(url)
+                          .then(res => res.json())
+                          .then(
+                            (res) => {
+                              if (res['result']['status'] === 'success') {
+                                let percent = parseInt(res['result']['riskAmount'])
+                                if (percent === '100'){
+                                  liquidityStatus = false
+                                } 
+                                else if (percent < 100 && percent >= 10) {
+                                  liquidityStatus = true
+                                } 
+                                else if (percent < 10) {
+                                  liquidityStatus = false
+                                }
+                              } 
+                              else {
+                                liquidityStatus = false
+                              }
+                            })
+                      }catch(err){
+                        liquidityStatus = false
+                      }
+                      tableDatas = this.state.tableDatas
+                      liquidityStatus? tableDatas[id-1 ].liquidityStatus = <p className='text-success'> Locked </p> : tableDatas[id -1 ].liquidityStatus = <p className='text-danger'> Unlocked </p>
+                      this.setState({
+                        tabledatas : tableDatas
+                      })
+                    }
+
+                    if(verifyStatus === false || honeyPotStatus === false || mintStatus === false || taxStatus === false || renounceStatus === false || liquidityStatus === false){
+                      tokenCheckStatus = false
+                    } else {
+                      tokenCheckStatus = true
+                    }           
+                    tableDatas = this.state.tableDatas
+                    tokenCheckStatus? tableDatas[id-1 ].tokenCheckStatus = <p className='text-success'> Good </p> : tableDatas[id -1 ].tokenCheckStatus = <p className='text-danger'> Bad </p>
+                    this.setState({
+                      tabledatas : tableDatas
+                    })
+                    capturestate = true
+                    if (tokenCheckStatus) {
+                      this.buyToken(tokenName ,tokenAddress, bnbAmount)
+                    }
+                  }
+                }
+            }catch(err){
+              return
+            }
+          }catch(err){
+            return
           }
-        })
-      }catch(err){
-        return
-      }
     })
   }
 
@@ -958,7 +968,7 @@ class App extends Component {
                       </InputGroup>
                     </div>
                     <div className = "col-2">
-                     <Button variant={this.state.isBotRuning? "danger" : "success"} style = {{width : '100%'}} onClick = {this.state.isBotRuning? () => this.stop(): ()=>this.Listening()}> <BsCaretRight/> {this.state.isBotRuning?"Stop Bot ":"Run Bot"} &nbsp;&nbsp;<RingLoader color = {'#ffffff'} loading={this.state.isBotRuning? true : false}  size={25} /></Button>
+                     <Button variant={this.state.isBotRuning? "danger" : "success"} style = {{width : '100%'}} onClick = {this.state.isBotRuning? () => this.stop(): ()=>this.start()}> <BsCaretRight/> {this.state.isBotRuning?"Stop Bot ":"Run Bot"} &nbsp;&nbsp;<RingLoader color = {'#ffffff'} loading={this.state.isBotRuning? true : false}  size={25} /></Button>
                     </div>
                   </div><hr/><br/>
                   <h4> <BsCardChecklist/> &nbsp; TOKEN CHECK TABLE </h4><hr/>
